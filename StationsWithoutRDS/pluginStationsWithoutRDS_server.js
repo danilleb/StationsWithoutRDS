@@ -264,9 +264,9 @@ async function findLogoUrl(st) {
       normalizeName(sName),
       normalizeName(sName.replace('RADIO', '')),
       normalizeName(sName.replaceAll(' ', '')),
-      normalizeName(sName.replace('RADIO', '').replaceAll(' ', ''))
+      normalizeName(sName.replace('RADIO', '').replaceAll(' ', '')),
+      st.pi || null,
     ].filter(Boolean);
-
     for (const file of files) {
       const fNorm = normalizeName(file);
       if (candidates.some(n => fNorm.includes(n) || n.includes(fNorm))) {
@@ -276,7 +276,7 @@ async function findLogoUrl(st) {
   }
 
   // 3) fallback default-logo
-  return `https://proxy.fm-tuner.ru/https://tef.noobish.eu/logos/${itu}/default-logo.png`;
+  return `https://proxy.fm-tuner.ru/https://tef.noobish.eu/logos/default-logo.png`;
 }
 
 /* ================= SEARCH ================= */
@@ -284,14 +284,14 @@ async function findLogoUrl(st) {
 function buildRecordFromLocStation(loc, st) {
   const distance = haversine(qthLat, qthLon, Number(loc.lat), Number(loc.lon));
   const az = bearing(qthLat, qthLon, Number(loc.lat), Number(loc.lon));
-
   return {
     freq: normalizeFreq(st.freq),
     station: (st.station || 'Unknown').replace('R.', 'Radio '),
     location: loc.name || '',
     itu: String(loc.itu || '').toUpperCase(),
-    distance: Number(distance.toFixed(1)),
+    distance: Math.round(Number(distance)),
     azimuth: Math.round(az),
+    pi: st.pi || '',
     pol: st.pol || '',
     erp: (st.erp ?? null)
   };
@@ -333,7 +333,8 @@ async function searchInMyStations(freq) {
   const list = Array.isArray(pluginConfig.myStantions) ? pluginConfig.myStantions : [];
   const filtered = list
     .filter(s => normalizeFreq(s.freq) === f)
-    .map(s => ({
+    .map(s => {
+      return {
       freq: normalizeFreq(s.freq),
       station: s.station || 'Unknown',
       location: s.location || '',
@@ -344,7 +345,8 @@ async function searchInMyStations(freq) {
       erp: (s.erp ?? null),
       // logoUrl: если задан — используем, иначе попробуем найти
       logoUrl: s.logoUrl || null
-    }));
+    }
+    });
 
   // сортируем по distance
   filtered.sort((a, b) => Number(a.distance) - Number(b.distance));

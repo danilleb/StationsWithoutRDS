@@ -92,7 +92,7 @@
     byId(dataStationContainer, 'data-station-pol').textContent = c.pol ?? '';
     byId(dataStationContainer, 'data-station-azimuth').textContent = c.azimuth + '°';
     byId(dataStationContainer, 'data-station-distance').textContent =
-      Number(c.distance).toFixed(1) + ' km';
+      Number(c.distance) + ' km';
 
     ensureSideButtons();
 
