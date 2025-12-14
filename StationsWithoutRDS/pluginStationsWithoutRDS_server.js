@@ -66,8 +66,11 @@ writeJsonSync(cfgFile, pluginConfig);
 
 /* ================= QTH ================= */
 
-const qthLat = Number(config?.identification?.lat);
-const qthLon = Number(config?.identification?.lon);
+const qthLat = Number("53.960325");
+const qthLon = Number("27.265073");
+
+// const qthLat = Number(config?.identification?.lat);
+// const qthLon = Number(config?.identification?.lon);
 
 if (!qthLat || !qthLon) {
   logError('[StationsWithoutRDS] QTH coordinates are missing in config.json (identification.lat/lon)');
@@ -245,6 +248,16 @@ async function findLogoUrl(st) {
   const target = normalizeName(st?.station || '');
   // 1) локальные (ключи могут быть разными, ищем совпадения по нормализованным)
   if (localLogos && typeof localLogos === 'object') {
+    if (st.pi) {
+      for (const k of Object.keys(localLogos)) {
+        const localKeyNorm = normalizeName(k);
+        // допускаем совпадение в обе стороны
+        if (localKeyNorm.includes(normalizeName(st.pi)) || normalizeName(st.pi).includes(localKeyNorm)) {
+          const file = localLogos[k];
+          if (file) return `/logos/${file}`;
+        }
+      }
+    }
     for (const k of Object.keys(localLogos)) {
       const localKeyNorm = normalizeName(k);
       // допускаем совпадение в обе стороны
@@ -258,25 +271,63 @@ async function findLogoUrl(st) {
   // 2) noobish — ищем подходящий файл
   const files = await getNoobishLogos(itu);
   if (files.length) {
-    // пробуем несколько вариантов имени (как у тебя было на клиенте)
     const sName = String(st?.station || '').toUpperCase();
+    const normalizeStrong = (s) =>
+      normalizeName(s)
+        .replace(/^RADIO/, '')
+        .replace(/RADIO/g, '');
+
+    const stripExt = (s) =>
+      s.replace(/\.(svg|gif|webp|png|jpg|jpeg)$/i, '');
+
+    const fNormOf = (file) =>
+      normalizeStrong(stripExt(file));
+
+    if (st.pi) {
+      for (const file of files) {
+        const fNorm = stripExt(file);
+        if (`${normalizeName(st.pi)}_${sName.replaceAll(' ', '')}` === fNorm) {
+          return `https://proxy.fm-tuner.ru/https://tef.noobish.eu/logos/${itu}/${file}`;
+        }
+      }
+      for (const file of files) {
+        const fNorm = stripExt(file);
+        if (`${normalizeName(st.pi)}` === fNorm) {
+          return `https://proxy.fm-tuner.ru/https://tef.noobish.eu/logos/${itu}/${file}`;
+        }
+      }
+    }
+    // варианты имени станции
     const candidates = [
-      st.pi ? `${normalizeName(st.pi)}_${normalizeName(sName)}` : null,
       normalizeName(sName),
       normalizeName(sName.replace('RADIO', '')),
       normalizeName(sName.replaceAll(' ', '')),
       normalizeName(sName.replace('RADIO', '').replaceAll(' ', '')),
-      st.pi ? normalizeName(st.pi) :  null,
-
     ].filter(Boolean);
+
+    const candNorm = candidates.map(normalizeStrong);
+    /** 1) Полное совпадение */
     for (const file of files) {
-      const fNorm = normalizeName(file).replace('SVG', '').replace('GIF', '').replace('WEBP', '').replace('PNG', '').replace('JPG', '');
-      
-      if (candidates.some(n => fNorm.includes(n) || n.includes(fNorm))) {
+      const fNorm = fNormOf(file);
+      if (candNorm.includes(fNorm)) {
+        return `https://proxy.fm-tuner.ru/https://tef.noobish.eu/logos/${itu}/${file}`;
+      }
+    }
+
+    /** 2) Фоллбек: частичное совпадение (но без коротких имён) */
+    for (const file of files) {
+      const fNorm = fNormOf(file);
+      if (
+        candNorm.some(n =>
+          n.length >= 4 &&
+          (fNorm.includes(n) || n.includes(fNorm))
+        )
+      ) {
         return `https://proxy.fm-tuner.ru/https://tef.noobish.eu/logos/${itu}/${file}`;
       }
     }
   }
+
 
   // 3) fallback default-logo
   return `https://proxy.fm-tuner.ru/https://tef.noobish.eu/logos/default-logo.png`;
@@ -338,17 +389,17 @@ async function searchInMyStations(freq) {
     .filter(s => normalizeFreq(s.freq) === f)
     .map(s => {
       return {
-      freq: normalizeFreq(s.freq),
-      station: s.station || 'Unknown',
-      location: s.location || '',
-      itu: String(s.itu || '').toUpperCase(),
-      distance: Number((Number(s.distance) || 0).toFixed(1)),
-      azimuth: Math.round(Number(s.azimuth) || 0),
-      pol: s.pol || '',
-      erp: (s.erp ?? null),
-      // logoUrl: если задан — используем, иначе попробуем найти
-      logoUrl: s.logoUrl || null
-    }
+        freq: normalizeFreq(s.freq),
+        station: s.station || 'Unknown',
+        location: s.location || '',
+        itu: String(s.itu || '').toUpperCase(),
+        distance: Number((Number(s.distance) || 0).toFixed(1)),
+        azimuth: Math.round(Number(s.azimuth) || 0),
+        pol: s.pol || '',
+        erp: (s.erp ?? null),
+        // logoUrl: если задан — используем, иначе попробуем найти
+        logoUrl: s.logoUrl || null
+      }
     });
 
   // сортируем по distance
