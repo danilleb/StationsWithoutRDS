@@ -217,7 +217,7 @@
 
       const frequency = data.freq;
       const signalDbuv = (data.sig ?? 0) - 11.25;
-      const hasTxInfo = !!data?.txInfo?.tx || !!data?.txInfo?.id;
+      const hasTxInfo = !!data?.txInfo?.tx || !!data?.txInfo?.id || (!(data.pi.includes('?')))
 
       if (hasTxInfo) {
         resetPendingAll();
