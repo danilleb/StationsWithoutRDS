@@ -261,14 +261,17 @@ async function findLogoUrl(st) {
     // пробуем несколько вариантов имени (как у тебя было на клиенте)
     const sName = String(st?.station || '').toUpperCase();
     const candidates = [
+      st.pi ? `${normalizeName(st.pi)}_${normalizeName(sName)}` : null,
       normalizeName(sName),
       normalizeName(sName.replace('RADIO', '')),
       normalizeName(sName.replaceAll(' ', '')),
       normalizeName(sName.replace('RADIO', '').replaceAll(' ', '')),
-      st.pi || null,
+      st.pi ? normalizeName(st.pi) :  null,
+
     ].filter(Boolean);
     for (const file of files) {
-      const fNorm = normalizeName(file);
+      const fNorm = normalizeName(file).replace('SVG', '').replace('GIF', '').replace('WEBP', '').replace('PNG', '').replace('JPG', '');
+      
       if (candidates.some(n => fNorm.includes(n) || n.includes(fNorm))) {
         return `https://proxy.fm-tuner.ru/https://tef.noobish.eu/logos/${itu}/${file}`;
       }
