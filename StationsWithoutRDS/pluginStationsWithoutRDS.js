@@ -1,24 +1,32 @@
 'use strict';
 
 (async () => {
+  /* ================= HELPERS ================= */
 
-  /* ================= SETTINGS (приедут с сервера) ================= */
+  const byId = (root, id) => (root ? root.querySelector(`#${CSS.escape(id)}`) : null);
 
-  let thresholdSignal = 10;
-  let STABLE_TIME = 3000;
+  function safeJsonParse(s) {
+    try {
+      return JSON.parse(s);
+    } catch {
+      return null;
+    }
+  }
 
-  const byId = (root, id) =>
-    root ? root.querySelector(`#${CSS.escape(id)}`) : null;
+  function stableStringify(obj) {
+    if (obj === null || typeof obj !== 'object') return JSON.stringify(obj);
+    if (Array.isArray(obj)) return `[${obj.map(stableStringify).join(',')}]`;
+    return `{${Object.keys(obj).sort().map(k => `"${k}":${stableStringify(obj[k])}`).join(',')}}`;
+  }
 
-  let lastFrequency = null;
-  let pendingFrequency = null;
-  let stableTimer = null;
+  function hashCandidates(list) {
+    return stableStringify(list);
+  }
 
-  let currentCandidates = [];
-  let currentCandidateIndex = 0;
+  let lastCandidatesHash = null;
+  let lastCandidatesLength = 0;
 
-  // чтобы принять только свой ответ
-  let activeRequestId = null;
+
 
   /* ================= UI INIT ================= */
 
@@ -26,15 +34,27 @@
   if (!baseContainer) return;
 
   const dataStationContainer = baseContainer.cloneNode(true);
+
+  function hiddenBaseContainer() {
+    if (baseContainer) {
+      baseContainer?.remove();
+    }
+  }
+
   dataStationContainer.id = 'data-station-container-no-rds';
   dataStationContainer.style.display = 'none';
   dataStationContainer.style.position = 'relative';
+
   baseContainer.parentNode.appendChild(dataStationContainer);
+  hiddenBaseContainer();
 
   const stationLogoPhone = byId(document, 'logo-container-phone');
   const stationLogo = byId(document, 'logo-container-desktop');
 
-  /* ================= UI ================= */
+  /* ================= UI RENDER ================= */
+
+  let currentCandidates = [];
+  let currentCandidateIndex = 0;
 
   function ensureSideButtons() {
     if (byId(dataStationContainer, 'candidate-prev')) return;
@@ -51,8 +71,8 @@
       b.style.opacity = '0.6';
       b.style.userSelect = 'none';
       b.style.fontSize = '32px';
-      b.onmouseenter = () => b.style.opacity = '1';
-      b.onmouseleave = () => b.style.opacity = '0.6';
+      b.onmouseenter = () => (b.style.opacity = '1');
+      b.onmouseleave = () => (b.style.opacity = '0.6');
       return b;
     };
 
@@ -69,30 +89,80 @@
     if (currentCandidates.length <= 1) return;
 
     currentCandidateIndex =
-      (currentCandidateIndex + dir + currentCandidates.length) %
-      currentCandidates.length;
+      (currentCandidateIndex + dir + currentCandidates.length) % currentCandidates.length;
 
     renderCandidate(currentCandidateIndex);
   }
+
+  function hideNoRdsUI() {
+    dataStationContainer.style.display = 'none';
+    currentCandidates = [];
+    currentCandidateIndex = 0;
+  }
+
+  function showCandidates(list) {
+    const candidates = Array.isArray(list) ? list : [];
+
+    const newHash = hashCandidates(candidates);
+
+    // 🔴 НИЧЕГО НЕ ДЕЛАЕМ если данные те же
+    if (
+      newHash === lastCandidatesHash &&
+      candidates.length === lastCandidatesLength
+    ) {
+      return;
+    }
+
+    lastCandidatesHash = newHash;
+    lastCandidatesLength = candidates.length;
+
+    hiddenBaseContainer();
+
+    currentCandidates = candidates;
+
+    // если индекс ещё валиден — сохраняем
+    if (currentCandidateIndex >= currentCandidates.length) {
+      currentCandidateIndex = 0;
+    }
+
+    if (!currentCandidates.length) {
+      hideNoRdsUI();
+      return;
+    }
+
+    renderCandidate(currentCandidateIndex);
+  }
+
 
   function renderCandidate(index) {
     const c = currentCandidates[index];
     if (!c) return;
 
+    // логотип — обновляем ТОЛЬКО если изменился
     if (c.logoUrl) {
-      stationLogoPhone?.children?.[0] && (stationLogoPhone.children[0].src = c.logoUrl);
-      stationLogo?.children?.[0] && (stationLogo.children[0].src = c.logoUrl);
+      if (stationLogoPhone?.children?.[0] && stationLogoPhone.children[0].src !== c.logoUrl) {
+        stationLogoPhone.children[0].src = c.logoUrl;
+      }
+      if (stationLogo?.children?.[0] && stationLogo.children[0].src !== c.logoUrl) {
+        stationLogo.children[0].src = c.logoUrl;
+      }
     }
 
-    byId(dataStationContainer, 'data-station-name').parentNode.style.display = 'block';
-    byId(dataStationContainer, 'data-station-name').textContent = c.station;
-    byId(dataStationContainer, 'data-station-city').textContent = c.location;
-    byId(dataStationContainer, 'data-station-itu').textContent = c.itu;
-    byId(dataStationContainer, 'data-station-erp').textContent = c.erp ?? '';
-    byId(dataStationContainer, 'data-station-pol').textContent = c.pol ?? '';
-    byId(dataStationContainer, 'data-station-azimuth').textContent = c.azimuth + '°';
-    byId(dataStationContainer, 'data-station-distance').textContent =
-      Number(c.distance) + ' km';
+    const setText = (id, value) => {
+      const el = byId(dataStationContainer, id);
+      const v = value ?? '';
+      if (el && el.textContent !== String(v)) {
+        el.textContent = v;
+      }
+    };
+
+    setText('data-station-name', c.station);
+    setText('data-station-city', c.location);
+    setText('data-station-itu', c.itu);
+    setText('data-station-erp', c.erp);
+    setText('data-station-pol', c.pol);
+    setText('data-station-azimuth', (c.azimuth ?? '') + '°');
+    setText('data-station-distance', Number(c.distance ?? 0) + ' km');
 
     ensureSideButtons();
 
@@ -101,159 +171,45 @@
     byId(dataStationContainer, 'candidate-next').style.display = show;
 
     dataStationContainer.style.display = 'block';
+
+    dataStationContainer.onclick = () => {
+      const text = `${c.freq} - ${c.pi || 'noPi'} | ${c.station} [${c.location}, ${c.itu}] - ${c.distance} | ${c.erp} kW`;
+      copyToClipboard(text);
+    };
   }
 
-  /* ================= CORE ================= */
 
-  function resetPendingUIOnly() {
-    dataStationContainer.style.display = 'none';
-    currentCandidates = [];
-    currentCandidateIndex = 0;
-  }
-
-  function onFrequencyStable(freq) {
-    requestCandidates(freq);
-  }
-
-  /* ================= WS (data_plugins) ================= */
+  /* ================= DATA_PLUGINS WS ================= */
 
   const pluginName = 'StationsWithoutRDS';
+
   const url = new URL(location.href);
   const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
   const basePath = url.pathname.replace(/setup/g, '').replace(/\/?$/, '/');
   const WS_URL = `${protocol}//${url.host}${basePath}data_plugins`;
 
-  let ws;
+  let ws = null;
 
   function connectDataWS() {
     ws = new WebSocket(WS_URL);
 
-    ws.onopen = () => {
-      console.log(`[${pluginName}] connected`);
+    ws.onopen = () => { };
 
-      // попросим конфиг
-      ws.send(JSON.stringify({
-        type: 'StationsWithoutRDS',
-        value: { action: 'get_config' }
-      }));
-    };
+    ws.onmessage = (e) => {
+      const msg = safeJsonParse(e.data);
+      if (!msg || msg.type !== pluginName) return;
 
-    ws.onmessage = e => {
-      try {
-        const msg = JSON.parse(e.data);
-        if (msg.type !== 'StationsWithoutRDS') return;
+      const v = msg.value;
 
-        const v = msg.value;
-
-        // config
-        if (v?.action === 'config') {
-          thresholdSignal = Number(v.thresholdSignal ?? thresholdSignal);
-          STABLE_TIME = Number(v.stableTime ?? STABLE_TIME); // сервер отдаёт в ms
-          console.log(`[${pluginName}] config`, { thresholdSignal, STABLE_TIME });
-          return;
-        }
-
-        // result: {requestId, list}
-        if (v && typeof v === 'object' && v.requestId) {
-          // принимаем только свой ответ
-          if (!activeRequestId || v.requestId !== activeRequestId) return;
-
-          const list = Array.isArray(v.list) ? v.list : [];
-          currentCandidates = list;
-          currentCandidateIndex = 0;
-
-          if (!currentCandidates.length) return;
-
-          renderCandidate(0);
-        }
-
-      } catch (err) {
-        console.error(`[${pluginName}] parse error`, err);
+      // Оставляем только find
+      if (v?.action === 'find') {
+        showCandidates(v.list);
+        return;
       }
     };
 
     ws.onclose = () => setTimeout(connectDataWS, 3000);
   }
 
-  function requestCandidates(freq) {
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
-
-    // новый requestId на каждый запрос
-    activeRequestId = (crypto?.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random());
-
-    ws.send(JSON.stringify({
-      type: 'StationsWithoutRDS',
-      value: { action: 'find', freq, requestId: activeRequestId }
-    }));
-  }
-
   connectDataWS();
-
-  /* ================= MAIN SOCKET ================= */
-
-  function resetPendingAll() {
-    resetPendingUIOnly();
-    pendingFrequency = null;
-    lastFrequency = null;
-    if (stableTimer) clearTimeout(stableTimer);
-    stableTimer = null;
-    activeRequestId = null;
-  }
-
-  function connectMainSocket() {
-    if (!window.socket || window.socket.readyState > 1) {
-      window.socket = new WebSocket(socketAddress);
-    }
-
-    window.socket.addEventListener('message', onMainMessage);
-    window.socket.addEventListener('close', () =>
-      setTimeout(connectMainSocket, 3000)
-    );
-  }
-
-  function onMainMessage(event) {
-    try {
-      const data = JSON.parse(event.data);
-
-      const frequency = data.freq;
-      const signalDbuv = (data.sig ?? 0) - 11.25;
-      const hasTxInfo = !!data?.txInfo?.tx || !!data?.txInfo?.id || (!(data.pi.includes('?')))
-
-      if (hasTxInfo) {
-        resetPendingAll();
-        lastFrequency = frequency;
-        return;
-      }
-
-      if (signalDbuv >= thresholdSignal && frequency) {
-        if (frequency !== pendingFrequency) {
-          // при смене частоты скрываем UI, но не трогаем lastFrequency
-          resetPendingUIOnly();
-
-          pendingFrequency = frequency;
-
-          if (stableTimer) clearTimeout(stableTimer);
-
-          stableTimer = setTimeout(() => {
-            if (pendingFrequency !== lastFrequency) {
-              lastFrequency = pendingFrequency;
-              onFrequencyStable(lastFrequency);
-            }
-          }, STABLE_TIME);
-        }
-      } else {
-        resetPendingAll();
-      }
-
-    } catch (e) {
-      console.error('main WS parse error', e);
-    }
-  }
-
-  if (document.readyState === 'loading') {
-    window.addEventListener('DOMContentLoaded', connectMainSocket);
-  } else {
-    connectMainSocket();
-  }
-
 })();
