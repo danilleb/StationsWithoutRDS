@@ -77,8 +77,8 @@ let lastFrequency = null;
 
 /* ================= QTH ================= */
 
-const qthLat = 53.960325 //Number(config?.identification?.lat);
-const qthLon = 27.265073 //Number(config?.identification?.lon);
+const qthLat = Number(config?.identification?.lat);
+const qthLon = Number(config?.identification?.lon);
 
 if (!qthLat || !qthLon) {
   logError('[StationsWithoutRDS] QTH coordinates are missing in config.json (identification.lat/lon)');
