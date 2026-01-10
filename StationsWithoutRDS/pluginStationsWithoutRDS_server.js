@@ -73,7 +73,9 @@ if (!fs.existsSync(cfgFile)) writeJsonSync(cfgFile, defaultConfig);
 let pluginConfig = readJsonSafe(cfgFile, defaultConfig);
 writeJsonSync(cfgFile, pluginConfig);
 
+
 let lastFrequency = null;
+let signalFixed = false
 
 /* ================= QTH ================= */
 
@@ -235,25 +237,47 @@ async function getNoobishLogos(itu) {
 async function findLogoUrl(st) {
   const itu = String(st?.itu || '').toUpperCase() || 'RUS';
   const target = normalizeName(st?.station || '');
-  
+
   // 1) локальные
   if (localLogos && typeof localLogos === 'object') {
-    if (st.pi) {
-      for (const k of Object.keys(localLogos)) {
+    const keys = Object.keys(localLogos);
+
+    const tryFind = (search, strongly = false) => {
+      if (!search) return null;
+      const searchNorm = normalizeName(search);
+      // 1️⃣ Строгое совпадение
+      for (const k of keys) {
         const localKeyNorm = normalizeName(k);
-        if (localKeyNorm.includes(normalizeName(st.pi)) || normalizeName(st.pi).includes(localKeyNorm)) {
+        if (localKeyNorm === searchNorm) {
           const file = localLogos[k];
           if (file) return `/logos/${file}`;
         }
       }
-    }
-    for (const k of Object.keys(localLogos)) {
-      const localKeyNorm = normalizeName(k);
-      if (localKeyNorm.includes(target) || target.includes(localKeyNorm)) {
-        const file = localLogos[k];
-        if (file) return `/logos/${file}`;
+      // 2️⃣ Частичное совпадение
+      if (strongly) {
+        for (const k of keys) {
+          const localKeyNorm = normalizeName(k);
+          if (
+            localKeyNorm.includes(searchNorm) ||
+            searchNorm.includes(localKeyNorm)
+          ) {
+            const file = localLogos[k];
+            if (file) return `/logos/${file}`;
+          }
+        }
       }
+      return null;
+    };
+    // потом target
+    const result = tryFind(target);
+    if (result) return result;
+
+    // сначала st.pi
+    if (st?.pi && (st?.pi || '').toUpperCase() !== 'NOPI') {
+      const result = tryFind(st.pi, true);
+      if (result) return result;
     }
+
   }
 
   // 2) noobish
@@ -362,11 +386,10 @@ async function searchInMyStations(freq, pi, ant) {
   const filtered = list
     .filter((s) => {
       if (f !== null && normalizeFreq(s.freq) !== f) return false;
-      if (p && normalizePi(s.pi) !== p) return false;
-
-      // ✅ поддержка обоих ключей: antenna и ant
-      const sAnt = Number(s.antenna ?? s.ant ?? 0);
-      if (Number(ant) !== sAnt) return false;
+      if ('antenna' in s) {
+        const sAnt = Number(s.antenna ?? s.ant ?? 0);
+        if (Number(ant) !== sAnt) return false;
+      }
 
       return true;
     })
@@ -619,23 +642,26 @@ function onTextMessage(data) {
 
   const frequency = data?.freq;
   const signalDbuv = (data?.sig ?? 0) - 11.25;
-  const pi =
-    String(data?.pi || '').includes('?') || data?.ps === ''
-      ? null
-      : data?.pi;
+  let pi = String(data?.pi || '').includes('?') || data?.ps === ''
+    ? null
+    : data?.pi;
 
   const ant = Number(data?.ant ?? 0);
 
   const threshold = getThresholdForFrequency(frequency, pluginConfig);
+  const thresholdTolerance = 3;
+  const effectiveThreshold = threshold - thresholdTolerance;
+
   const stableTimeMs = Number(pluginConfig.stableTime || 3) * 1000;
 
-  // ====== DETECT FREQUENCY CHANGE ======
+  // ====== DETECT FREQUENCY CHANGE ===
+  // ===
   if (frequency !== lastFrequency) {
     lastFrequency = frequency;
     resetAllOnFrequencyChange();
   }
 
-  const hasTx = Boolean(data?.txInfo?.tx);
+  const hasTx = Boolean(!!data?.txInfo?.tx && !!pi);
 
   // ====== TX MODE ======
   if (hasTx) {
@@ -648,15 +674,24 @@ function onTextMessage(data) {
     return;
   }
 
+  const freqChanged = frequency !== monitorState.pendingFrequency;
+  // signalFixed
+  if (!freqChanged && (signalDbuv >= effectiveThreshold) && !signalFixed) {
+    signalFixed = true
+  }
+
+  if (freqChanged) {
+    signalFixed = false
+  }
+
   // ====== SEARCH MODE ======
   if (!frequency || !Number.isFinite(signalDbuv)) return;
 
-  if (signalDbuv < threshold) {
+  if (signalDbuv < effectiveThreshold && !signalFixed) {
     stopFindBroadcast();
     return;
   }
 
-  const freqChanged = frequency !== monitorState.pendingFrequency;
   const piChanged = pi !== monitorState.pendingPi;
   const antChanged = ant !== monitorState.pendingAnt;
 
