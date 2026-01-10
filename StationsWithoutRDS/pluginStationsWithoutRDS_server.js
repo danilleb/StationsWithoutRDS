@@ -38,25 +38,28 @@ function ensureDirSync(dir) {
 function writeJsonSync(file, obj) {
   fs.writeFileSync(file, JSON.stringify(obj, null, 2), 'utf8');
 }
+const clone = (v) => JSON.parse(JSON.stringify(v));
 function readJsonSafe(file, fallback) {
   try {
     const raw = fs.readFileSync(file, 'utf8');
     const obj = JSON.parse(raw);
-    if (!obj || typeof obj !== 'object') return { ...fallback };
+    if (!obj || typeof obj !== 'object') return clone(fallback);
 
-    const out = { ...fallback, ...obj };
+    const out = clone(obj);
+
     if (!Array.isArray(out.myStantions)) out.myStantions = [];
-    out.mode = Number(out.mode) || 1;
-    out.thresholdSignal = Number(out.thresholdSignal ?? fallback.thresholdSignal);
-    out.stableTime = Number(out.stableTime ?? fallback.stableTime); // seconds
-    out.maxDistanceKm = Number(out.maxDistanceKm ?? fallback.maxDistanceKm);
-    out.refreshStationsMs = Number(out.refreshStationsMs ?? fallback.refreshStationsMs);
+    if (!Number.isFinite(out.mode)) out.mode = 1;
+    if (!Number.isFinite(out.thresholdSignal)) out.thresholdSignal = fallback.thresholdSignal;
+    if (!Number.isFinite(out.stableTime)) out.stableTime = fallback.stableTime;
+    if (!Number.isFinite(out.maxDistanceKm)) out.maxDistanceKm = fallback.maxDistanceKm;
+    if (!Number.isFinite(out.refreshStationsMs)) out.refreshStationsMs = fallback.refreshStationsMs;
 
     return out;
   } catch {
-    return { ...fallback };
+    return clone(fallback);
   }
 }
+
 
 const defaultConfig = {
   mode: 1,
@@ -71,8 +74,6 @@ ensureDirSync(cfgDir);
 if (!fs.existsSync(cfgFile)) writeJsonSync(cfgFile, defaultConfig);
 
 let pluginConfig = readJsonSafe(cfgFile, defaultConfig);
-writeJsonSync(cfgFile, pluginConfig);
-
 
 let lastFrequency = null;
 let signalFixed = false

@@ -79,13 +79,15 @@
     const prev = mkBtn('candidate-prev', '‹', 'left');
     const next = mkBtn('candidate-next', '›', 'right');
 
-    prev.onclick = () => switchCandidate(-1);
-    next.onclick = () => switchCandidate(1);
+    prev.onclick = (e) => switchCandidate(e, -1);
+    next.onclick = (e) => switchCandidate(e, 1);
 
     dataStationContainer.append(prev, next);
   }
 
-  function switchCandidate(dir) {
+  function switchCandidate(e, dir) {
+    e.stopPropagation();
+    
     if (currentCandidates.length <= 1) return;
 
     currentCandidateIndex =
@@ -100,7 +102,7 @@
     currentCandidateIndex = 0;
   }
 
-  function showCandidates(list) {
+  function showCandidates(list, isServer = false) {
     const candidates = Array.isArray(list) ? list : [];
 
     const newHash = hashCandidates(candidates);
@@ -128,6 +130,19 @@
     if (!currentCandidates.length) {
       hideNoRdsUI();
       return;
+    }
+
+    const others = byId(dataStationContainer, 'data-station-others')
+    if (others) {
+      if (!isServer) {
+        others.style.visibility = "hidden"
+        others.style.height = "0px"
+        others.style.width = "0px"
+      } else {
+        others.style.visibility = "visible"
+        others.style.removeProperty('height')
+        others.style.removeProperty('width')
+      }
     }
 
     renderCandidate(currentCandidateIndex);
@@ -170,9 +185,12 @@
     byId(dataStationContainer, 'candidate-prev').style.display = show;
     byId(dataStationContainer, 'candidate-next').style.display = show;
 
+    const parentStName = byId(dataStationContainer, 'data-station-name').parentNode
+    parentStName.style.display = 'block'
+    parentStName.style.padding = '0px'
     dataStationContainer.style.display = 'block';
-
-    dataStationContainer.onclick = () => {
+    dataStationContainer.onclick = (e) => {
+      e.stopPropagation();
       const text = `${c.freq} - ${c.pi || 'noPi'} | ${c.station} [${c.location}, ${c.itu}] - ${c.distance} | ${c.erp} kW`;
       copyToClipboard(text);
     };
@@ -203,7 +221,7 @@
 
       // Оставляем только find
       if (v?.action === 'find') {
-        showCandidates(v.list);
+        showCandidates(v.list, v?.isServer || false);
         return;
       }
     };
