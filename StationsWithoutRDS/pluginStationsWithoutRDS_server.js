@@ -243,7 +243,7 @@ async function findLogoUrl(st) {
     const keys = Object.keys(localLogos);
 
     const tryFind = (search, strongly = false) => {
-      if (!search) return null;
+      if (!search) return null
       const searchNorm = normalizeName(search);
       // 1️⃣ Строгое совпадение
       for (const k of keys) {
@@ -266,7 +266,7 @@ async function findLogoUrl(st) {
           }
         }
       }
-      return null;
+      return null
     };
     // потом target
     const result = tryFind(target);
@@ -280,50 +280,115 @@ async function findLogoUrl(st) {
 
   }
 
-  // 2) noobish
+  // helpers
+  const stripExt = (s) => s.replace(/\.(svg|gif|webp|png|jpg|jpeg)$/i, '');
+  const stripHexPrefix = (s) => s.replace(/^[0-9A-F]+_/, '');
+
+  // normalize station name (RADIO можно убирать)
+  const normalizeStation = (s) =>
+    normalizeName(s)
+      .replace(/^RADIO/, '')
+      .replace(/RADIO/g, '');
+
+  // normalize file name (RADIO НЕ трогаем)
+  const normalizeFile = (file) =>
+    normalizeName(stripHexPrefix(stripExt(file)));
+
+  const makeUrl = (file) =>
+    `https://proxy.fm-tuner.ru/https://tef.noobish.eu/logos/${itu}/${file}`;
+
+  // =====================
+  // noobish logo search
+  // =====================
   const files = await getNoobishLogos(itu);
-  if (files.length) {
-    const sName = String(st?.station || '').toUpperCase();
-    const normalizeStrong = (s) => normalizeName(s).replace(/^RADIO/, '').replace(/RADIO/g, '');
-    const stripExt = (s) => s.replace(/\.(svg|gif|webp|png|jpg|jpeg)$/i, '');
-    const fNormOf = (file) => normalizeStrong(stripExt(file));
 
-    if (st.pi) {
-      for (const file of files) {
-        const fNorm = stripExt(file);
-        if (`${normalizeName(st.pi)}_${sName.replaceAll(' ', '')}` === fNorm) {
-          return `https://proxy.fm-tuner.ru/https://tef.noobish.eu/logos/${itu}/${file}`;
-        }
-      }
-      for (const file of files) {
-        const fNorm = stripExt(file);
-        if (`${normalizeName(st.pi)}` === fNorm) {
-          return `https://proxy.fm-tuner.ru/https://tef.noobish.eu/logos/${itu}/${file}`;
-        }
+
+  if (!files?.length) {
+    return `https://proxy.fm-tuner.ru/https://tef.noobish.eu/logos/default-logo.png`
+  }
+
+  const sName = String(st?.station || '').toUpperCase();
+  const piNorm = normalizePi(st?.pi || '');
+
+
+  // =====================
+  // 1) PI + STATION (strict)
+  // =====================
+  if (piNorm) {
+    const target = `${piNorm}_${sName.replaceAll(' ', '')}`;
+
+    for (const file of files) {
+      if (stripExt(file) === target) {
+        return makeUrl(file);
       }
     }
 
-    const candidates = [
-      normalizeName(sName),
-      normalizeName(sName.replace('RADIO', '')),
-      normalizeName(sName.replaceAll(' ', '')),
-      normalizeName(sName.replace('RADIO', '').replaceAll(' ', '')),
-    ].filter(Boolean);
-
-    const candNorm = candidates.map(normalizeStrong);
-
+    // =====================
+    // 2) PI only
+    // =====================
     for (const file of files) {
-      const fNorm = fNormOf(file);
-      if (candNorm.includes(fNorm)) {
-        return `https://proxy.fm-tuner.ru/https://tef.noobish.eu/logos/${itu}/${file}`;
+      if (stripExt(file) === piNorm) {
+        return makeUrl(file);
       }
     }
+  }
 
-    for (const file of files) {
-      const fNorm = fNormOf(file);
-      if (candNorm.some((n) => n.length >= 4 && (fNorm.includes(n) || n.includes(fNorm)))) {
-        return `https://proxy.fm-tuner.ru/https://tef.noobish.eu/logos/${itu}/${file}`;
-      }
+  // =====================
+  // station candidates
+  // =====================
+  const stationCandidatesRaw = [
+    sName,
+    sName.replaceAll(' ', ''),
+    sName.replace(/^RADIO/, ''),
+    sName.replace(/^RADIO/, '').replaceAll(' ', ''),
+  ].filter(Boolean);
+
+  const stationNorms = [
+    ...new Set(stationCandidatesRaw.map(normalizeStation)),
+  ];
+
+  // =====================
+  // 3) exact name match
+  // =====================
+  for (const file of files) {
+    const fNorm = normalizeFile(file);
+    if (stationNorms.includes(fNorm)) {
+      return makeUrl(file);
+    }
+  }
+
+  // =====================
+  // 4) partial match (safe)
+  // =====================
+  for (const file of files) {
+    const fNorm = normalizeFile(file);
+
+    if (
+      stationNorms.some(
+        (n) =>
+          n.length >= 3 &&
+          (fNorm.includes(n) || n.includes(fNorm))
+      )
+    ) {
+      return makeUrl(file);
+    }
+  }
+
+  // =====================
+  // 5) fallback: strong partial (HEX removed + RADIO removed)
+  // =====================
+  const normalizeFileStrong = (file) =>
+    normalizeStation(stripHexPrefix(stripExt(file)));
+
+  for (const file of files) {
+    const fNorm = normalizeFileStrong(file);
+
+    if (
+      stationNorms.some(
+        (n) => fNorm.includes(n) || n.includes(fNorm)
+      )
+    ) {
+      return makeUrl(file);
     }
   }
 
