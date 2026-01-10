@@ -246,6 +246,7 @@ async function findLogoUrl(st) {
     const tryFind = (search, strongly = false) => {
       if (!search) return null
       const searchNorm = normalizeName(search);
+      
       // 1️⃣ Строгое совпадение
       for (const k of keys) {
         const localKeyNorm = normalizeName(k);
@@ -258,7 +259,7 @@ async function findLogoUrl(st) {
       if (strongly) {
         for (const k of keys) {
           const localKeyNorm = normalizeName(k);
-          if (
+        if (
             localKeyNorm.includes(searchNorm) ||
             searchNorm.includes(localKeyNorm)
           ) {
@@ -466,7 +467,7 @@ async function searchInMyStations(freq, pi, ant) {
       itu: String(s.itu || '').toUpperCase(),
       distance: Number((Number(s.distance) || 0).toFixed(1)),
       azimuth: Math.round(Number(s.azimuth) || 0),
-      pi: s.pi || '',
+      pi: s.pi || pi || '',
       pol: s.pol || '',
       erp: s.erp ?? null,
       logoUrl: s.logoUrl || null,
