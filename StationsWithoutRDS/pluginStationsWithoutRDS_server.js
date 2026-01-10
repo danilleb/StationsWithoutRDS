@@ -714,7 +714,7 @@ function onTextMessage(data) {
   const ant = Number(data?.ant ?? 0);
 
   const threshold = getThresholdForFrequency(frequency, pluginConfig);
-  const thresholdTolerance = 3;
+  const thresholdTolerance = 0;
   const effectiveThreshold = threshold - thresholdTolerance;
 
   const stableTimeMs = Number(pluginConfig.stableTime || 3) * 1000;
