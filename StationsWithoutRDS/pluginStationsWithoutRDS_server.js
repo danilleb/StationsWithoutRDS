@@ -81,7 +81,7 @@ let signalFixed = false
 /* ================= QTH ================= */
 
 const qthLat = Number(config?.identification?.lat);
-const qthLon = Number(config?.identification?.lon);
+const qthLon =  Number(config?.identification?.lon);
 
 if (!qthLat || !qthLon) {
   logError('[StationsWithoutRDS] QTH coordinates are missing in config.json (identification.lat/lon)');
@@ -147,25 +147,51 @@ function normalizeName(str = '') {
 /* ================= MAPS.FMDX CACHE ================= */
 
 let locationsCache = [];
+let locationsCacheFMLIST = []
+let logosCacheFMLIST = []
 let lastStationsLoadTs = 0;
 
 async function loadStationsFromMaps() {
   if (!qthLat || !qthLon) return;
 
-  try {
-    const url =
-      `https://proxy.fm-tuner.ru/https://maps.fmdx.org/api/?qth=${qthLat},${qthLon}&date=${new Date().toLocaleDateString('en-CA')}`;
-
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`maps.fmdx HTTP ${res.status}`);
-
-    const json = await res.json();
-    locationsCache = Object.values(json.locations || {});
-    lastStationsLoadTs = Date.now();
-
-    logInfo('[StationsWithoutRDS] maps.fmdx loaded:', locationsCache.length);
-  } catch (e) {
-    logError('[StationsWithoutRDS] maps.fmdx load failed', e);
+  {
+    try {
+      const url = `https://proxy.fm-tuner.ru/https://maps.fmdx.org/api/?qth=${qthLat},${qthLon}&date=${new Date().toLocaleDateString('en-CA')}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`maps.fmdx HTTP ${res.status}`);
+      const json = await res.json();
+      locationsCache = Object.values(json.locations || {});
+      lastStationsLoadTs = Date.now();
+      logInfo('[StationsWithoutRDS] maps.fmdx loaded:', locationsCache.length);
+    } catch (e) {
+      logError('[StationsWithoutRDS] maps.fmdx load failed', e);
+    }
+  }
+  {
+    try {
+      const url = `https://fmlist.ru/dataset/index.json`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`fmlist.ru HTTP ${res.status}`);
+      const json = await res.json();
+      locationsCacheFMLIST = Object.values(json.locations || {});
+      lastStationsLoadTs = Date.now();
+      logInfo('[StationsWithoutRDS] fmlist.ru loaded:', locationsCacheFMLIST.length);
+    } catch (e) {
+      logError('[StationsWithoutRDS] fmlist.ru load failed', e);
+    }
+  }
+  {
+    try {
+      const url = `https://fmlist.ru/logos/index.json`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`fmlist.ru HTTP ${res.status}`);
+      const json = await res.json();
+      logosCacheFMLIST = json;
+      lastStationsLoadTs = Date.now();
+      logInfo('[StationsWithoutRDS] logos fmlist.ru loaded:', Object.keys(logosCacheFMLIST).length);
+    } catch (e) {
+      logError('[StationsWithoutRDS] logos fmlist.ru load failed', e);
+    }
   }
 }
 
@@ -239,6 +265,10 @@ async function findLogoUrl(st) {
   const itu = String(st?.itu || '').toUpperCase() || 'RUS';
   const target = normalizeName(st?.station || '');
 
+  if ('idStation' in st && logosCacheFMLIST?.[st?.idStation]) {
+    return logosCacheFMLIST?.[st?.idStation]?.logoUrl
+  }
+
   // 1) локальные
   if (localLogos && typeof localLogos === 'object') {
     const keys = Object.keys(localLogos);
@@ -246,7 +276,7 @@ async function findLogoUrl(st) {
     const tryFind = (search, strongly = false) => {
       if (!search) return null
       const searchNorm = normalizeName(search);
-      
+
       // 1️⃣ Строгое совпадение
       for (const k of keys) {
         const localKeyNorm = normalizeName(k);
@@ -259,7 +289,7 @@ async function findLogoUrl(st) {
       if (strongly) {
         for (const k of keys) {
           const localKeyNorm = normalizeName(k);
-        if (
+          if (
             localKeyNorm.includes(searchNorm) ||
             searchNorm.includes(localKeyNorm)
           ) {
@@ -303,8 +333,6 @@ async function findLogoUrl(st) {
   // noobish logo search
   // =====================
   const files = await getNoobishLogos(itu);
-
-
   if (!files?.length) {
     return `https://proxy.fm-tuner.ru/https://tef.noobish.eu/logos/default-logo.png`
   }
@@ -412,6 +440,7 @@ function buildRecordFromLocStation(loc, st) {
     pi: st.pi || '',
     pol: st.pol || '',
     erp: st.erp ?? null,
+    idStation: st.idStation ?? null,
   };
 }
 
@@ -438,7 +467,32 @@ async function searchInMaps(freq, pi) {
   result.sort((a, b) => Number(a.distance) - Number(b.distance));
   for (const r of result) r.logoUrl = await findLogoUrl(r);
 
-  return result;
+  if (result.length) {
+    return result;
+  } else {
+    const f = normalizeFreq(freq);
+    const p = normalizePi(pi);
+    if (f === null && !p) return [];
+
+    const maxD = Number(pluginConfig.maxDistanceKm || 500);
+    const result = [];
+
+    for (const loc of locationsCacheFMLIST) {
+      const d = haversine(qthLat, qthLon, Number(loc.lat), Number(loc.lon));
+      if (d > maxD) continue;
+
+      for (const st of loc.stations || []) {
+        if (st.inactive) continue;
+        if (f !== null && normalizeFreq(st.freq) !== f) continue;
+        if (p && normalizePi(st.pi || 'noPI') !== p) continue;
+        result.push(buildRecordFromLocStation(loc, st));
+      }
+    }
+    result.sort((a, b) => Number(a.distance) - Number(b.distance));
+    for (const r of result) r.logoUrl = await findLogoUrl(r);
+
+    return result
+  }
 }
 
 async function searchInMyStations(freq, pi, ant) {
@@ -742,12 +796,13 @@ function onTextMessage(data) {
   }
 
   const freqChanged = frequency !== monitorState.pendingFrequency;
+  const antChanged = ant !== monitorState.pendingAnt;
   // signalFixed
   if (!freqChanged && (signalDbuv >= effectiveThreshold) && !signalFixed) {
     signalFixed = true
   }
 
-  if (freqChanged) {
+  if (freqChanged || antChanged) {
     signalFixed = false
   }
 
@@ -760,7 +815,6 @@ function onTextMessage(data) {
   }
 
   const piChanged = pi !== monitorState.pendingPi;
-  const antChanged = ant !== monitorState.pendingAnt;
 
   if (freqChanged || piChanged || antChanged) {
     monitorState.pendingFrequency = frequency;
