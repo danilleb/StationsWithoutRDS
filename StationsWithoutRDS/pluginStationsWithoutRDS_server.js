@@ -772,13 +772,26 @@ const throttledSendTx = throttleLeading(sendRequest, 250);
 /* ================= /text handler ================= */
 
 function onTextMessage(data) {
+  let pi = String(data?.pi || '').includes('?') || data?.ps === ''
+    ? null
+    : data?.pi;
+  const hasTx = Boolean(!!data?.txInfo?.tx && !!pi);
+
+  // ====== TX MODE ======
+  if (hasTx) {
+    throttledSendTx({
+      pluginName,
+      frequency,
+      pi,
+      data,
+    });
+    return;
+  }
   pluginConfig = readJsonSafe(cfgFile, defaultConfig);
 
   const frequency = data?.freq;
   const signalDbuv = (data?.sig ?? 0) - 11.25;
-  let pi = String(data?.pi || '').includes('?') || data?.ps === ''
-    ? null
-    : data?.pi;
+
 
   const ant = Number(data?.ant ?? 0);
 
@@ -793,19 +806,6 @@ function onTextMessage(data) {
   if (frequency !== lastFrequency) {
     lastFrequency = frequency;
     resetAllOnFrequencyChange();
-  }
-
-  const hasTx = Boolean(!!data?.txInfo?.tx && !!pi);
-
-  // ====== TX MODE ======
-  if (hasTx) {
-    throttledSendTx({
-      pluginName,
-      frequency,
-      pi,
-      data,
-    });
-    return;
   }
 
   const freqChanged = frequency !== monitorState.pendingFrequency;
