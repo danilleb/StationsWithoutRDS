@@ -77,6 +77,9 @@ let pluginConfig = readJsonSafe(cfgFile, defaultConfig);
 
 let lastFrequency = null;
 let signalFixed = false
+let signalSum = 0;
+let signalCount = 0;
+let signalWindowStart = 0;
 
 /* ================= QTH ================= */
 
@@ -775,6 +778,7 @@ function onTextMessage(data) {
   let pi = String(data?.pi || '').includes('?') || data?.ps === ''
     ? null
     : data?.pi;
+
   const hasTx = Boolean(!!data?.txInfo?.tx && !!pi);
 
   // ====== TX MODE ======
@@ -787,43 +791,48 @@ function onTextMessage(data) {
     });
     return;
   }
+
   pluginConfig = readJsonSafe(cfgFile, defaultConfig);
 
   const frequency = data?.freq;
   const signalDbuv = (data?.sig ?? 0) - 11.25;
-
-
   const ant = Number(data?.ant ?? 0);
 
   const threshold = getThresholdForFrequency(frequency, pluginConfig);
-  const thresholdTolerance = 0;
-  const effectiveThreshold = threshold - thresholdTolerance;
-
   const stableTimeMs = Number(pluginConfig.stableTime || 3) * 1000;
+  const now = Date.now();
 
-  // ====== DETECT FREQUENCY CHANGE ===
-  // ===
+  // ====== FREQUENCY CHANGE ======
   if (frequency !== lastFrequency) {
     lastFrequency = frequency;
     resetAllOnFrequencyChange();
+
+    signalFixed = false;
+    signalSum = 0;
+    signalCount = 0;
+    signalWindowStart = 0;
   }
 
   const freqChanged = frequency !== monitorState.pendingFrequency;
-  const antChanged = ant !== monitorState.pendingAnt;
-  // signalFixed
-  if (!freqChanged && (signalDbuv >= effectiveThreshold) && !signalFixed) {
-    signalFixed = true
-  }
-  
-  if (freqChanged || antChanged) {
-    signalFixed = false
-  }
+  const piChanged   = pi !== monitorState.pendingPi;
+  const antChanged  = ant !== monitorState.pendingAnt;
+
+  // ====== ANTENNA CHANGE ======
   if (antChanged) {
     stopFindBroadcast();
-    if (monitorState.stableTimer) clearTimeout(monitorState.stableTimer);
-    monitorState.stableTimer = null;
-    monitorState.pendingAnt = ant;
+
     signalFixed = false;
+    signalSum = 0;
+    signalCount = 0;
+    signalWindowStart = 0;
+
+    if (monitorState.stableTimer) {
+      clearTimeout(monitorState.stableTimer);
+      monitorState.stableTimer = null;
+    }
+
+    monitorState.pendingAnt = ant;
+
     wsSendPlugins({
       type: pluginName,
       value: {
@@ -836,38 +845,63 @@ function onTextMessage(data) {
     });
   }
 
-
   // ====== SEARCH MODE ======
   if (!frequency || !Number.isFinite(signalDbuv)) return;
 
-  if (signalDbuv < effectiveThreshold && !signalFixed) {
-    stopFindBroadcast();
-    return;
-  }
+  // ====== ДО ФИКСАЦИИ — НАКОПЛЕНИЕ ======
+  if (!signalFixed) {
+    // старт окна
+    if (!signalWindowStart) {
+      signalWindowStart = now;
+      signalSum = 0;
+      signalCount = 0;
+    }
 
-  const piChanged = pi !== monitorState.pendingPi;
+    signalSum += signalDbuv;
+    signalCount++;
 
-  if (freqChanged || piChanged || antChanged) {
+    const elapsed = now - signalWindowStart;
+
+    // окно ещё не набралось
+    if (elapsed < stableTimeMs) {
+      return;
+    }
+
+    // окно набралось → считаем среднее
+    const avgSignal = signalSum / signalCount;
+
+    if (avgSignal < threshold) {
+      // ❌ средний уровень ниже порога — сброс
+      signalWindowStart = 0;
+      signalSum = 0;
+      signalCount = 0;
+      stopFindBroadcast();
+      return;
+    }
+
+    // ✅ СРЕДНИЙ уровень достаточен → ФИКСАЦИЯ
+    signalFixed = true;
+
     monitorState.pendingFrequency = frequency;
     monitorState.pendingPi = pi;
     monitorState.pendingAnt = ant;
 
-    if (monitorState.stableTimer) clearTimeout(monitorState.stableTimer);
-
-    monitorState.stableTimer = setTimeout(() => {
-      stopFindBroadcast();
-      startFindBroadcast(frequency, pi, ant);
-    }, stableTimeMs);
-
+    stopFindBroadcast();
+    startFindBroadcast(frequency, pi, ant);
     return;
   }
 
-  if (!monitorState.active && !monitorState.stableTimer) {
-    monitorState.stableTimer = setTimeout(() => {
-      startFindBroadcast(frequency, pi, ant);
-    }, stableTimeMs);
+  // ====== ПОСЛЕ ФИКСАЦИИ ======
+  // уровень больше не контролируем
+  if (freqChanged || piChanged || antChanged) {
+    signalFixed = false;
+    signalWindowStart = 0;
+    signalSum = 0;
+    signalCount = 0;
   }
 }
+
+
 
 
 /* ================= CONNECT: /data_plugins ================= */
