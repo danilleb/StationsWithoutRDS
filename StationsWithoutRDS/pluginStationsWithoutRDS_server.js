@@ -619,10 +619,15 @@ const monitorState = {
 
   broadcastTimer: null,
   lastBroadcastAt: 0,
+
+  gen: 0, // 👈 добавили
 };
 
 
+
 function stopFindBroadcast() {
+  monitorState.gen++; // 👈 инвалидируем все “в полёте” запросы
+
   monitorState.active = false;
   monitorState.activeFrequency = null;
   monitorState.activePi = null;
@@ -632,6 +637,7 @@ function stopFindBroadcast() {
   monitorState.lastBroadcastAt = 0;
 }
 
+
 async function broadcastFindOnce() {
   if (!monitorState.active || !monitorState.activeFrequency) return;
 
@@ -639,8 +645,14 @@ async function broadcastFindOnce() {
   const pi = monitorState.activePi;
   const ant = monitorState.ant;
 
+  const myGen = monitorState.gen; // 👈 снимок поколения
+
   try {
     const list = await searchStations(freq, pi, ant);
+
+    // 👇 если пока ждали — антенна/частота сменилась и gen вырос, не шлём старьё
+    if (!monitorState.active) return;
+    if (myGen !== monitorState.gen) return;
 
     wsSendPlugins({
       type: pluginName,
@@ -658,6 +670,7 @@ async function broadcastFindOnce() {
     logError('[StationsWithoutRDS] broadcastFindOnce failed', e);
   }
 }
+
 
 function startFindBroadcast(freq, pi, ant) {
   monitorState.active = true;
@@ -801,10 +814,28 @@ function onTextMessage(data) {
   if (!freqChanged && (signalDbuv >= effectiveThreshold) && !signalFixed) {
     signalFixed = true
   }
-
+  
   if (freqChanged || antChanged) {
     signalFixed = false
   }
+  if (antChanged) {
+    stopFindBroadcast();
+    if (monitorState.stableTimer) clearTimeout(monitorState.stableTimer);
+    monitorState.stableTimer = null;
+    monitorState.pendingAnt = ant;
+    signalFixed = false;
+    wsSendPlugins({
+      type: pluginName,
+      value: {
+        action: 'find',
+        freq: frequency ?? null,
+        pi: null,
+        ts: Date.now(),
+        list: [],
+      },
+    });
+  }
+
 
   // ====== SEARCH MODE ======
   if (!frequency || !Number.isFinite(signalDbuv)) return;
