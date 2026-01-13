@@ -272,8 +272,16 @@ async function findLogoUrl(st) {
     return logosCacheFMLIST?.[st?.idStation]?.logoUrl
   }
 
+  if ('logoUrls' in pluginConfig) {
+    const logoUrls = pluginConfig.logoUrls || {}
+    const nameSt = `${itu}_${(st?.station || '').replaceAll(' ', '').trim()}`
+    if (logoUrls?.[nameSt]) {
+      return logoUrls?.[nameSt]
+    }
+  }
+
   // 1) локальные
-  if (localLogos && typeof localLogos === 'object') {
+  if (localLogos && typeof localLogos === 'object' && st?.isCustom) {
     const keys = Object.keys(localLogos);
 
     const tryFind = (search, strongly = false) => {
@@ -528,6 +536,7 @@ async function searchInMyStations(freq, pi, ant) {
       pol: s.pol || '',
       erp: s.erp ?? null,
       logoUrl: s.logoUrl || null,
+      isCustom: true
     }));
 
   filtered.sort((a, b) => Number(a.distance) - Number(b.distance));
@@ -775,6 +784,7 @@ const throttledSendTx = throttleLeading(sendRequest, 250);
 /* ================= /text handler ================= */
 
 function onTextMessage(data) {
+  const frequency = data?.freq;
   let pi = String(data?.pi || '').includes('?') || data?.ps === ''
     ? null
     : data?.pi;
@@ -794,7 +804,6 @@ function onTextMessage(data) {
 
   pluginConfig = readJsonSafe(cfgFile, defaultConfig);
 
-  const frequency = data?.freq;
   const signalDbuv = (data?.sig ?? 0) - 11.25;
   const ant = Number(data?.ant ?? 0);
 
