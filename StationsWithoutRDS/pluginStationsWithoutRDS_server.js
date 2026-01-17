@@ -760,9 +760,9 @@ function sendRequest({ pluginName, frequency, pi, data }) {
       freq: frequency,
       pi: pi || null,
       ts: Date.now(),
+      isServer: true,
       list: [
         {
-          isServer: true,
           freq: frequency,
           station: data?.txInfo?.tx,
           location: data?.txInfo?.city,
