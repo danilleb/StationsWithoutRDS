@@ -396,6 +396,34 @@
     };
   }
 
+  function hidePlugin() {
+    logoOriginal.style.display = displayValueLogo
+    logo.style.display = 'none'
+    dataStationContainer.style.display = 'none';
+    currentCandidates = [];
+    currentCandidateIndex = 0;
+  }
+
+  function watchDisplayBlock(baseContainer) {
+    if (baseContainer.style.display === 'block') {
+      hidePlugin()
+      return;
+    }
+  
+    const observer = new MutationObserver(() => {
+      if (baseContainer.style.display === 'block') {
+        hidePlugin()
+      }
+    });
+  
+    observer.observe(baseContainer, {
+      attributes: true,
+      attributeFilter: ['style']
+    });
+  }
+  
+
+  watchDisplayBlock(baseContainer)
 
   /* ================= DATA_PLUGINS WS ================= */
 

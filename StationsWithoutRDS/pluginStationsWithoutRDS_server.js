@@ -783,16 +783,77 @@ const throttledSendTx = throttleLeading(sendRequest, 250);
 
 /* ================= /text handler ================= */
 
+const txAccum = {
+  windowMs: 1000,
+  startTs: 0,
+  total: 0,
+  trues: 0,
+  state: false
+};
+function resetTxAccum() {
+  txAccum.startTs = 0;
+  txAccum.total = 0;
+  txAccum.trues = 0;
+  txAccum.state = false;
+}
+function accumulateTx(rawHasTx) {
+  const now = Date.now();
+
+  // старт окна
+  if (!txAccum.startTs) {
+    txAccum.startTs = now;
+  }
+
+  // накапливаем статистику
+  txAccum.total++;
+  if (rawHasTx) txAccum.trues++;
+
+  // окно ещё не закрыто → возвращаем текущее состояние
+  if (now - txAccum.startTs < txAccum.windowMs) {
+    return txAccum.state;
+  }
+
+  // считаем долю TX
+  const ratio = txAccum.total
+    ? txAccum.trues / txAccum.total
+    : 0;
+
+  // ===== ГИСТЕРЕЗИС =====
+  if (!txAccum.state) {
+    // вход в TX
+    if (ratio >= 0.5) {
+      txAccum.state = true;
+    }
+  } else {
+    // выход из TX
+    if (ratio <= 0.2) {
+      txAccum.state = false;
+    }
+  }
+
+  // начинаем новое окно
+  txAccum.startTs = now;
+  txAccum.total = 0;
+  txAccum.trues = 0;
+
+  return txAccum.state;
+}
+
+
+
+
 function onTextMessage(data) {
   const frequency = data?.freq;
   let pi = String(data?.pi || '').includes('?') || data?.ps === ''
     ? null
     : data?.pi;
 
-  const hasTx = Boolean(!!data?.txInfo?.tx && !!pi);
+    const rawHasTx = Boolean(data?.txInfo?.tx);
+    const hasTx = accumulateTx(rawHasTx);
 
   // ====== TX MODE ======
   if (hasTx) {
+    stopFindBroadcast();
     throttledSendTx({
       pluginName,
       frequency,
@@ -815,7 +876,7 @@ function onTextMessage(data) {
   if (frequency !== lastFrequency) {
     lastFrequency = frequency;
     resetAllOnFrequencyChange();
-
+    resetTxAccum();
     signalFixed = false;
     signalSum = 0;
     signalCount = 0;
@@ -829,7 +890,7 @@ function onTextMessage(data) {
   // ====== ANTENNA CHANGE ======
   if (antChanged) {
     stopFindBroadcast();
-
+    resetTxAccum();
     signalFixed = false;
     signalSum = 0;
     signalCount = 0;
