@@ -86,6 +86,8 @@ let signalWindowStart = 0;
 const qthLat = Number(config?.identification?.lat);
 const qthLon =  Number(config?.identification?.lon);
 
+
+
 if (!qthLat || !qthLon) {
   logError('[StationsWithoutRDS] QTH coordinates are missing in config.json (identification.lat/lon)');
 }
@@ -452,6 +454,7 @@ function buildRecordFromLocStation(loc, st) {
     pol: st.pol || '',
     erp: st.erp ?? null,
     idStation: st.idStation ?? null,
+    id: st.id || null,
   };
 }
 
@@ -608,6 +611,7 @@ function resetAllOnFrequencyChange() {
     type: pluginName,
     value: {
       action: 'find',
+      loc: {qthLat, qthLon},
       freq: null,
       pi: null,
       ts: Date.now(),
@@ -670,6 +674,7 @@ async function broadcastFindOnce() {
       type: pluginName,
       value: {
         action: 'find',
+        loc: {qthLat, qthLon},
         freq,
         pi: pi || null,
         ts: Date.now(),
@@ -758,6 +763,7 @@ function sendRequest({ pluginName, frequency, pi, data }) {
     value: {
       action: 'find',
       freq: frequency,
+      loc: {qthLat, qthLon},
       pi: pi || null,
       ts: Date.now(),
       isServer: true,
@@ -907,6 +913,7 @@ function onTextMessage(data) {
       type: pluginName,
       value: {
         action: 'find',
+        loc: {qthLat, qthLon},
         freq: frequency ?? null,
         pi: null,
         ts: Date.now(),

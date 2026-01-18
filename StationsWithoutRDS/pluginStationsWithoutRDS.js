@@ -5,6 +5,7 @@
 
   const byId = (root, id) => (root ? root.querySelector(`#${CSS.escape(id)}`) : null);
 
+  let loc = null
 
   function isVisible(el) {
     return el.offsetParent !== null;
@@ -86,6 +87,9 @@
   const logoOriginal = isVisible(origStationLogo) ? origStationLogo : origStationLogoPhone
   const displayValueLogo = `${logoOriginal.style.display}`
 
+  logo.style.display = 'none'
+  dataStationContainer.style.display = 'none';
+
   /* ================= UI RENDER ================= */
 
   let currentCandidates = [];
@@ -139,6 +143,14 @@
     currentCandidateIndex = 0;
   }
 
+  function openSt(st) {
+    if (loc && st.id) {
+      const url = `https://maps.fmdx.org/#qth=${loc.qthLat},${loc.qthLon}&freq=${st.freq}&findId=${st.id}`
+      window.open(url, '_blank')
+    }
+    
+  }
+
   function showCandidates(list, isServer = false) {
     const candidates = Array.isArray(list) ? list : [];
 
@@ -179,10 +191,10 @@
 
   function showStationsOverlay(candidates, onSelect) {
     if (!Array.isArray(candidates) || !candidates.length) return;
-  
+
     // если уже открыт — не создаём второй
     if (document.getElementById('stations-overlay')) return;
-  
+
     const overlay = document.createElement('div');
     overlay.id = 'stations-overlay';
     overlay.style.cssText = `
@@ -194,7 +206,7 @@
       align-items: center;
       justify-content: center;
     `;
-  
+
     const panel = document.createElement('div');
     panel.style.cssText = `
       background: var(--color-2, #111);
@@ -211,7 +223,7 @@
     if ((window.visualViewport?.width || window.innerWidth) < 500) {
       overlay.style.alignItems = 'stretch';
       overlay.style.justifyContent = 'stretch';
-    
+
       panel.style.width = '100vw';
       panel.style.maxWidth = '100vw';
       panel.style.height = '100vh';
@@ -219,7 +231,7 @@
       panel.style.borderRadius = '0';
       panel.style.padding = '12px 10px 10px';
     }
-  
+
     const header = document.createElement('div');
     header.style.cssText = `
       display: flex;
@@ -227,13 +239,13 @@
       align-items: center;
       margin-bottom: 8px;
     `;
-  
+
     const title = document.createElement('div');
     title.textContent = `Stations (${candidates.length})`;
     title.style.color = 'var(--color-text)'
     title.style.fontSize = '16px';
     title.style.fontWeight = '600';
-  
+
     const closeBtn = document.createElement('div');
     closeBtn.textContent = '✕';
     closeBtn.style.cssText = `
@@ -244,7 +256,7 @@
     `;
     closeBtn.onmouseenter = () => closeBtn.style.opacity = '1';
     closeBtn.onmouseleave = () => closeBtn.style.opacity = '0.7';
-  
+
     const list = document.createElement('div');
     list.style.cssText = `
       overflow-y: auto;
@@ -252,7 +264,7 @@
       flex-direction: column;
       gap: 6px;
     `;
-  
+
     candidates.forEach((c, index) => {
       const item = document.createElement('div');
       item.style.cssText = `
@@ -265,10 +277,10 @@
         cursor: pointer;
         background: var(--color-3, #1a1a1a);
       `;
-  
+
       item.onmouseenter = () => item.style.background = 'var(--color-4, #2a2a2a)';
       item.onmouseleave = () => item.style.background = 'var(--color-3, #1a1a1a)';
-  
+
       const logo = document.createElement('img');
       logo.src = c.logoUrl || '';
       logo.style.cssText = `
@@ -276,7 +288,7 @@
         height: 50px;
         object-fit: contain;
       `;
-  
+
       const info = document.createElement('div');
       info.innerHTML = `
         <div style="font-weight:600; color: var(--color-text);">${c.station || '—'}</div>
@@ -284,7 +296,7 @@
           ${c.location || ''} · ${c.itu || ''} · ${c.azimuth ?? '?'}°
         </div>
       `;
-  
+
       const meta = document.createElement('div');
       meta.style.cssText = `
         font-size: 12px;
@@ -292,39 +304,40 @@
         white-space: nowrap;
         color: var(--color-text);
       `;
-      meta.textContent = `${c.erp ?? '?'} kW · ${c.distance ?? '?'} km`;
-  
+      meta.textContent = `${c.pol ? `[${c.pol.toUpperCase()}] ·` : ''}  ${c.erp ?? '?'} kW · ${c.distance ?? '?'} km`;
+
       item.append(logo, info, meta);
-  
+
       item.onclick = (e) => {
         e.stopPropagation();
         const text = `${c.freq} - ${c.pi || 'noPi'} | ${c.station} [${c.location}, ${c.itu}] - ${c.distance} | ${c.erp} kW`;
         copyToClipboard(text);
+        openSt(c)
       };
-  
+
       list.appendChild(item);
     });
-  
+
     header.append(title, closeBtn);
     panel.append(header, list);
     overlay.appendChild(panel);
     document.body.appendChild(overlay);
-  
+
     function close() {
       overlay.remove();
       document.removeEventListener('keydown', onKey);
     }
-  
+
     function onKey(e) {
       if (e.key === 'Escape') close();
     }
-  
+
     closeBtn.onclick = close;
     overlay.onclick = close;
     panel.onclick = e => e.stopPropagation();
     document.addEventListener('keydown', onKey);
   }
-  
+
 
 
   function renderCandidate(index) {
@@ -375,7 +388,6 @@
         event.stopPropagation()
 
         showStationsOverlay(currentCandidates);
-        console.log('Нужно показать оверлей со списком станций, так же нужен крестик и адаптивность под мобилку, по esc тоже закрытие');
       })
     }
 
@@ -409,19 +421,19 @@
       hidePlugin()
       return;
     }
-  
+
     const observer = new MutationObserver(() => {
       if (baseContainer.style.display === 'block') {
         hidePlugin()
       }
     });
-  
+
     observer.observe(baseContainer, {
       attributes: true,
       attributeFilter: ['style']
     });
   }
-  
+
 
   watchDisplayBlock(baseContainer)
 
@@ -449,6 +461,7 @@
 
       // Оставляем только find
       if (v?.action === 'find') {
+        loc = v?.loc
         showCandidates(v.list, v?.isServer || false);
         return;
       }
