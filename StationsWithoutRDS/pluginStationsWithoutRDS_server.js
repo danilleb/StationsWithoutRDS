@@ -84,11 +84,8 @@ let signalWindowStart = 0;
 
 /* ================= QTH ================= */
 
-const qthLat = 53.960325 //Number(config?.identification?.lat);
-const qthLon = 27.265073 //Number(config?.identification?.lon);
-// const qthLat = Number(config?.identification?.lat);
-// const qthLon =  Number(config?.identification?.lon);
-
+const qthLat = Number(config?.identification?.lat);
+const qthLon =  Number(config?.identification?.lon);
 const urlProxy = pluginConfig?.urlProxy || ''
 
 
