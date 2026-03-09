@@ -67,7 +67,8 @@ const defaultConfig = {
   thresholdSignal: 10, // dBµV
   stableTime: 3, // seconds
   maxDistanceKm: 500, // km
-  refreshStationsMs: 24, // hours
+  refreshStationsMs: 24, // hours,
+  urlProxy: null
 };
 
 ensureDirSync(cfgDir);
@@ -83,8 +84,12 @@ let signalWindowStart = 0;
 
 /* ================= QTH ================= */
 
-const qthLat = Number(config?.identification?.lat);
-const qthLon =  Number(config?.identification?.lon);
+const qthLat = 53.960325 //Number(config?.identification?.lat);
+const qthLon = 27.265073 //Number(config?.identification?.lon);
+// const qthLat = Number(config?.identification?.lat);
+// const qthLon =  Number(config?.identification?.lon);
+
+const urlProxy = pluginConfig?.urlProxy || ''
 
 
 
@@ -161,7 +166,7 @@ async function loadStationsFromMaps() {
 
   {
     try {
-      const url = `https://proxy.fm-tuner.ru/https://maps.fmdx.org/api/?qth=${qthLat},${qthLon}&date=${new Date().toLocaleDateString('en-CA')}`;
+      const url = `${urlProxy}https://maps.fmdx.org/api/?qth=${qthLat},${qthLon}&date=${new Date().toLocaleDateString('en-CA')}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error(`maps.fmdx HTTP ${res.status}`);
       const json = await res.json();
@@ -246,7 +251,9 @@ async function getNoobishLogos(itu) {
   if (noobishCache[key]) return noobishCache[key];
 
   try {
-    const url = `https://proxy.fm-tuner.ru/https://tef.noobish.eu/logos/${key}/`;
+    const base = `https://tef.noobish.eu/logos/${key}/`;
+    const url = `${urlProxy}${base}`;
+
     const res = await fetch(url);
     if (!res.ok) {
       noobishCache[key] = [];
@@ -254,9 +261,9 @@ async function getNoobishLogos(itu) {
     }
 
     const html = await res.text();
-    const files = [...html.matchAll(/href="([^"]+\.(png|svg|gif))"/gi)]
-      .map((m) => m[1])
-      .filter(Boolean);
+
+    const files = [...html.matchAll(/href="\.\/([^"]+\.(?:png|svg|gif))"/gi)]
+      .map(m => m[1]);
 
     noobishCache[key] = files;
     return files;
@@ -340,14 +347,14 @@ async function findLogoUrl(st) {
     normalizeName(stripHexPrefix(stripExt(file)));
 
   const makeUrl = (file) =>
-    `https://proxy.fm-tuner.ru/https://tef.noobish.eu/logos/${itu}/${file}`;
+    `${urlProxy}https://tef.noobish.eu/logos/${itu}/${file}`;
 
   // =====================
   // noobish logo search
   // =====================
   const files = await getNoobishLogos(itu);
   if (!files?.length) {
-    return `https://proxy.fm-tuner.ru/https://tef.noobish.eu/logos/default-logo.png`
+    return `${urlProxy}https://tef.noobish.eu/logos/default-logo.png`
   }
 
   const sName = String(st?.station || '').toUpperCase();
@@ -435,7 +442,7 @@ async function findLogoUrl(st) {
     }
   }
 
-  return `https://proxy.fm-tuner.ru/https://tef.noobish.eu/logos/default-logo.png`;
+  return `${urlProxy}https://tef.noobish.eu/logos/default-logo.png`;
 }
 
 /* ================= SEARCH ================= */
