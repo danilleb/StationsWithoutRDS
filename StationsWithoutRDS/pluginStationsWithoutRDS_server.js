@@ -259,7 +259,7 @@ async function getNoobishLogos(itu) {
 
     const html = await res.text();
 
-    const files = [...html.matchAll(/href="\.\/([^"]+\.(?:png|svg|gif))"/gi)]
+    const files = [...html.matchAll(/href="(?:\.\/)?([^"]+\.(?:png|svg|gif|webp|jpe?g))"/gi)]
       .map(m => m[1]);
 
     noobishCache[key] = files;
